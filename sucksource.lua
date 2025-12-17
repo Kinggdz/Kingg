@@ -9265,6 +9265,7 @@ section:slider({name = "speed speed", min = 1, max = 100, default = 20, interval
     headshots.Speed.Speed = Value
 end})
 
+-- ==================== QUICK BUY FIXED VERSION ====================
 local column = Misc:column()
 local section = column:section({name = "quick buy"})
 
@@ -9305,77 +9306,67 @@ end
 local function BuyItem(ItemName)
     if not ItemName or Debounce then return end
     Debounce = true
-
-    local wasDesyncEnabled = desync and desync.enabled
-    if wasDesyncEnabled then
-        pcall(function() toggleDesync(false) end)
-        task.wait(0.1)
-    end
-
-    local RootPart = GetCharacterRoot()
-    if not RootPart then 
-        library:notify("[ERROR] No HumanoidRootPart found!", 3)
-        Debounce = false
-        return
-    end
-
-    local ItemModel = ShopFolder:FindFirstChild(ItemName)
-    if ItemModel then
-        local ClickDetector = ItemModel:FindFirstChildOfClass("ClickDetector")
-        if ClickDetector then
-            local OriginalPosition = RootPart.CFrame
-
-            RootPart.CFrame = CFrame.new(ItemModel.Head.Position + Vector3.new(0, 3, 0))
-            task.wait(0.2)
-
-            fireclickdetector(ClickDetector)
-
-            library:notify("Purchased: " .. ItemName, 3)
-
+    pcall(function()
+        local wasDesyncEnabled = desync and desync.enabled
+        if wasDesyncEnabled then
+            pcall(function() toggleDesync(false) end)
             task.wait(0.1)
-            RootPart.CFrame = OriginalPosition
-        else
-            library:notify("[ERROR] ClickDetector not found in " .. ItemName, 3)
         end
-    else
-        library:notify("[ERROR] Item not found: " .. ItemName, 3)
-    end
-
-    if wasDesyncEnabled then
-        task.wait(0.2)
-        pcall(function() toggleDesync(true) end)
-    end
-
+        local RootPart = GetCharacterRoot()
+        if not RootPart then 
+            library:notify("[ERROR] No HumanoidRootPart found!", 3)
+            Debounce = false
+            return
+        end
+        local ItemModel = ShopFolder:FindFirstChild(ItemName)
+        if ItemModel and ItemModel:FindFirstChild("Head") then
+            local ClickDetector = ItemModel:FindFirstChildOfClass("ClickDetector")
+            if ClickDetector then
+                local OriginalPosition = RootPart.CFrame
+                RootPart.CFrame = CFrame.new(ItemModel.Head.Position + Vector3.new(0, 3, 0))
+                task.wait(0.2)
+                fireclickdetector(ClickDetector)
+                library:notify("Purchased: " .. ItemName, 3)
+                task.wait(0.1)
+                RootPart.CFrame = OriginalPosition
+            else
+                library:notify("[ERROR] ClickDetector not found!", 3)
+            end
+        else
+            library:notify("[ERROR] Item not found: " .. ItemName, 3)
+        end
+        if wasDesyncEnabled then
+            task.wait(0.2)
+            pcall(function() toggleDesync(true) end)
+        end
+    end)
     Debounce = false
 end
 
 local function BuyAmmo()
     if not SelectedItem or Debounce then return end
-
     local AmmoMap = {
         ["[Revolver] - $1421"] = "12 [Revolver Ammo] - $55",
         ["[AUG] - $2131"] = "90 [AUG Ammo] - $87",
         ["[LMG] - $4098"] = "200 [LMG Ammo] - $328",
         ["[Rifle] - $1694"] = "5 [Rifle Ammo] - $273",
     }
-
     local AmmoItem = AmmoMap[SelectedItem]
     if AmmoItem then
         BuyItem(AmmoItem)
     else
-        library:notify("[ERROR] No ammo available.", 3)
+        library:notify("[ERROR] No ammo available for this item.", 3)
     end
 end
 
 local function AutoBuyOnRespawnHandler()
     if not AutoBuyOnRespawn or not SelectedItem then return end
-
+    task.wait(1)
     BuyItem(SelectedItem)
-
     if AmmoBuyCount < 3 then
         for i = 1, 3 do
-            BuyAmmo()
             task.wait(0.5)
+            BuyAmmo()
         end
         AmmoBuyCount = 3
     end
@@ -9394,7 +9385,11 @@ section:buttonholder()
 section:button({
     name = 'Buy Item',
     callback = function()
-        BuyItem(SelectedItem)
+        if SelectedItem then
+            BuyItem(SelectedItem)
+        else
+            library:notify("[ERROR] Please select an item first!", 3)
+        end
     end
 })
 
@@ -9410,125 +9405,8 @@ LocalPlayer.CharacterAdded:Connect(function()
     ShopFolder = Workspace:WaitForChild("Ignored"):WaitForChild("Shop")
     AutoBuyOnRespawnHandler()
 end)
+-- ==================== END QUICK BUY ====================
 
--- AUTO ARMOR SYSTEM (FIXED)
-local section = column:section({name = "auto buys"})
-
-section:toggle({
-    name = 'auto armor',
-    flag = 'autoarmorenabled',
-    callback = function(Value)
-        headshots.AutoArmor.Enabled = Value
-    end
-})
-
-section:slider({
-    name = 'armor threshold',
-    min = 0,
-    max = 200,
-    default = 75,
-    interval = 1,
-    flag = 'armorthreshold',
-    callback = function(Value)
-        getgenv().armorThreshold = Value
-    end
-})
-
-section:toggle({
-    name = 'auto fire armor',
-    flag = 'autofirearmorenabled',
-    callback = function(Value)
-        headshots.AutoFireArmor.Enabled = Value
-    end
-})
-
-section:slider({
-    name = 'fire armor threshold',
-    min = 0,
-    max = 200,
-    default = 75,
-    interval = 1,
-    flag = 'firearmorthreshold',
-    callback = function(Value)
-        getgenv().fArmorThreshold = Value
-    end
-})
-
--- AUTO ARMOR LOOP (IMPROVED)
-game:GetService("RunService").Heartbeat:Connect(function()
-    if headshots.AutoArmor.Enabled and game.Players.LocalPlayer.Character then
-        pcall(function()
-            local player = game.Players.LocalPlayer
-            local char = player.Character
-            
-            if char and char:FindFirstChild("BodyEffects") then
-                local armorValue = char.BodyEffects:FindFirstChild("Armor")
-                
-                if armorValue and armorValue.Value < getgenv().armorThreshold then
-                    local canBuy = true
-                    
-                    -- Check if player is alive
-                    local humanoid = char:FindFirstChild("Humanoid")
-                    if humanoid and humanoid.Health <= 1 then
-                        canBuy = false
-                    end
-                    
-                    -- Check if player is knocked
-                    local bodyEffects = char:FindFirstChild("BodyEffects")
-                    local isKO = bodyEffects and bodyEffects:FindFirstChild("K.O") and bodyEffects["K.O"].Value
-                    if isKO then
-                        canBuy = false
-                    end
-                    
-                    if canBuy then
-                        local SavedPosition = char.HumanoidRootPart.CFrame
-                        char.HumanoidRootPart.CFrame = game.Workspace.Ignored.Shop:FindFirstChild("[High-Medium Armor] - $2513").Head.CFrame
-                        task.wait(0.2)
-                        fireclickdetector(game.Workspace.Ignored.Shop:FindFirstChild("[High-Medium Armor] - $2513"):FindFirstChildOfClass("ClickDetector"))
-                        task.wait(0.1)
-                        char.HumanoidRootPart.CFrame = SavedPosition
-                    end
-                end
-            end
-        end)
-    end
-    
-    -- AUTO FIRE ARMOR
-    if headshots.AutoFireArmor and headshots.AutoFireArmor.Enabled and game.Players.LocalPlayer.Character then
-        pcall(function()
-            local player = game.Players.LocalPlayer
-            local char = player.Character
-            
-            if char and char:FindFirstChild("BodyEffects") then
-                local fireArmorValue = char.BodyEffects:FindFirstChild("FireArmor")
-                
-                if fireArmorValue and fireArmorValue.Value < getgenv().fArmorThreshold then
-                    local canBuy = true
-                    
-                    local humanoid = char:FindFirstChild("Humanoid")
-                    if humanoid and humanoid.Health <= 1 then
-                        canBuy = false
-                    end
-                    
-                    local bodyEffects = char:FindFirstChild("BodyEffects")
-                    local isKO = bodyEffects and bodyEffects:FindFirstChild("K.O") and bodyEffects["K.O"].Value
-                    if isKO then
-                        canBuy = false
-                    end
-                    
-                    if canBuy then
-                        local SavedPosition = char.HumanoidRootPart.CFrame
-                        char.HumanoidRootPart.CFrame = game.Workspace.Ignored.Shop:FindFirstChild("[Fire Armor] - $2623").Head.CFrame
-                        task.wait(0.2)
-                        fireclickdetector(game.Workspace.Ignored.Shop:FindFirstChild("[Fire Armor] - $2623"):FindFirstChildOfClass("ClickDetector"))
-                        task.wait(0.1)
-                        char.HumanoidRootPart.CFrame = SavedPosition
-                    end
-                end
-            end
-        end)
-    end
-end)
 
 
 local section = column:section({name = "money"})
